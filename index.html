@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>My Bus & LRT Dashboard</title>
+    <title>My Transit Dashboard</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #f0f2f5; padding: 15px; margin: 0; }
         .header { text-align: center; padding: 20px 0; background: #004a99; color: white; margin-bottom: 20px; border-radius: 0 0 15px 15px; }
@@ -12,9 +12,11 @@
         .route-section { background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #ddd; }
         .route-title { font-weight: bold; font-size: 1.2em; color: #004a99; border-bottom: 2px solid #ffcc00; padding-bottom: 5px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
         
-        /* Light Rail Specific Styling */
+        /* Provider Specific Colors */
         .lrt-title { color: #d31145; border-bottom-color: #d31145; }
         .lrt-box { background: #d31145 !important; color: white !important; }
+        .kmb-title { color: #ed1c24; border-bottom-color: #ed1c24; }
+        .kmb-box { background: #ed1c24 !important; color: white !important; }
 
         .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
         .eta-row:last-child { border-bottom: none; }
@@ -26,7 +28,6 @@
         .status { font-size: 0.8em; color: #888; text-align: center; margin-top: 5px; }
     </style>
 </head>
-
 <body>
 
 <div class="header">
@@ -40,25 +41,34 @@
 </div>
 
 <script>
-    // --- CITYBUS CONFIG ---
     const BUS_STOPS = [
-        { type: 'BUS', label: "Home", stopId: "002011", route: "962X" },
-        { type: 'BUS', label: "Chambers", stopId: "001122", route: "962X" },
-        { type: 'BUS', label: "Sogo", stopId: "002438", route: "962X" },
-        { type: 'BUS', label: "Sogo", stopId: "002438", route: "2X" },
-        { type: 'BUS', label: "Tai Hong House", stopId: "001313", route: "720" },
-        { type: 'BUS', label: "Tai Hong House", stopId: "001313", route: "720A" },
-        { type: 'BUS', label: "Tai Hong House", stopId: "001313", route: "2X" },
-        { type: 'BUS', label: "Tai Cheong Street", stopId: "001304", route: "720" }
+        { type: 'BUS', provider: 'CTB', label: "Home", stopId: "002011", route: "962X" },
+        { type: 'BUS', provider: 'CTB', label: "HSBC", stopId: "001122", route: "962X" },
+        
+        // KMB Results (4 items)
+        { type: 'BUS', provider: 'KMB', label: "Li Yuen East St", stopId: "83B717529F9794BC", route: "960", serviceType: "1" },
+        { type: 'BUS', provider: 'KMB', label: "Li Yuen East St", stopId: "83B717529F9794BC", route: "961", serviceType: "1" },
+        { type: 'BUS', provider: 'KMB', label: "Tuen Mun Interchange", stopId: "A8B22902BD665766", route: "59X", serviceType: "1" },
+        { type: 'BUS', provider: 'KMB', label: "Tuen Mun Interchange", stopId: "A8B22902BD665766", route: "59M", serviceType: "1" },
+
+        // Remaining Citybus stops
+        { type: 'BUS', provider: 'CTB', label: "Sogo", stopId: "002438", route: "962X" },
+        { type: 'BUS', provider: 'CTB', label: "Sogo", stopId: "002438", route: "2X" },
+        { type: 'BUS', provider: 'CTB', label: "Tai Hong House", stopId: "001313", route: "720" },
+        { type: 'BUS', provider: 'CTB', label: "Tai Hong House", stopId: "001313", route: "720A" },
+        { type: 'BUS', provider: 'CTB', label: "Tai Hong House", stopId: "001313", route: "2X" },
+        { type: 'BUS', provider: 'CTB', label: "Tai Cheong Street", stopId: "001304", route: "720" }
     ];
 
-    // --- MTR LIGHT RAIL CONFIG ---
     const LRT_STOPS = [
         { type: 'LRT', label: "Siu Hei", stationId: "240" }
     ];
 
     async function fetchBusETA(stop) {
-        const url = `https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${stop.stopId}/${stop.route}`;
+        let url = (stop.provider === 'CTB') 
+            ? `https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${stop.stopId}/${stop.route}`
+            : `https://data.etabus.gov.hk/v1/transport/kmb/eta/${stop.stopId}/${stop.route}/${stop.serviceType}`;
+
         try {
             const response = await fetch(url);
             const json = await response.json();
@@ -75,11 +85,7 @@
             if (json.platform_list) {
                 json.platform_list.forEach(p => {
                     p.route_list.forEach(r => {
-                        allArrivals.push({
-                            route: r.route_no,
-                            dest: r.dest_en,
-                            time: r.time_en
-                        });
+                        allArrivals.push({ route: r.route_no, dest: r.dest_en, time: r.time_en });
                     });
                 });
             }
@@ -92,42 +98,50 @@
         const updateText = document.getElementById('last-updated');
         updateText.innerText = "Updating...";
         
-        // Fetch data
-        const busResults = await Promise.all(BUS_STOPS.map(fetchBusETA));
-        const lrtResults = await Promise.all(LRT_STOPS.map(fetchLrtETA));
+        const [busResults, lrtResults] = await Promise.all([
+            Promise.all(BUS_STOPS.map(fetchBusETA)),
+            Promise.all(LRT_STOPS.map(fetchLrtETA))
+        ]);
         
-        // --- RE-ORDERING LOGIC ---
-        // Take bus results and insert LRT result at the 3rd position (Index 2)
+        // RE-ORDERING: 
+        // 2 Citybus + 4 KMB = 6 items. 
+        // LRT moves to index 6 (7th item).
         let combinedResults = [...busResults];
-        combinedResults.splice(2, 0, ...lrtResults);
+        combinedResults.splice(6, 0, ...lrtResults);
         
         dashboard.innerHTML = "";
         
         combinedResults.forEach(res => {
             let etaHtml = "";
-            let titleClass = (res.type === 'LRT') ? "lrt-title" : "";
-            let timeBoxClass = (res.type === 'LRT') ? "lrt-box" : "";
-            let routeLabel = (res.type === 'LRT') ? "Light Rail" : `Route ${res.route}`;
+            let titleClass = "";
+            let timeBoxClass = "";
+            let routeLabel = "";
+
+            if (res.type === 'LRT') {
+                titleClass = "lrt-title";
+                timeBoxClass = "lrt-box";
+                routeLabel = "Light Rail";
+            } else if (res.provider === 'KMB') {
+                titleClass = "kmb-title";
+                timeBoxClass = "kmb-box";
+                routeLabel = `KMB ${res.route}`;
+            } else {
+                routeLabel = `Route ${res.route}`;
+            }
 
             if (res.data.length > 0) {
                 res.data.slice(0, 3).forEach(item => {
-                    let displayTime = "";
-                    let destinationText = "";
+                    let displayTime, destinationText;
 
                     if (res.type === 'BUS') {
                         const diff = Math.round((new Date(item.eta) - new Date()) / 60000);
                         displayTime = diff <= 0 ? "Arriving" : `${diff} mins`;
-                        destinationText = `to ${item.dest_en}`;
+                        destinationText = `to ${item.dest_en || item.dest}`;
                     } else {
-                        displayTime = item.time; 
+                        displayTime = item.time;
                         destinationText = `<b>${item.route}</b> to ${item.dest}`;
                     }
-
-                    etaHtml += `
-                        <div class="eta-row">
-                            <div class="time-box ${timeBoxClass}">${displayTime}</div>
-                            <div class="destination">${destinationText}</div>
-                        </div>`;
+                    etaHtml += `<div class="eta-row"><div class="time-box ${timeBoxClass}">${displayTime}</div><div class="destination">${destinationText}</div></div>`;
                 });
             } else {
                 etaHtml = `<div class="status">No upcoming service found.</div>`;
@@ -140,10 +154,8 @@
                         <span style="font-size: 0.7em; color: #666; font-weight: normal;">${res.label}</span>
                     </div>
                     ${etaHtml}
-                </div>
-            `;
+                </div>`;
         });
-
         updateText.innerText = "Last updated: " + new Date().toLocaleTimeString();
     }
 
